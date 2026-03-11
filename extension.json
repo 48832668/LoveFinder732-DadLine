@@ -1,7 +1,7 @@
 {
-	"name": "schematic-progress-tracker",
+	"name": "lovefinderseries-dadLine-sch-progress-tracker",
 	"uuid": "d2b61d94cd204cb0a47ace2be0364c64",
-	"displayName": "DadLine-工程进度可视化",
+	"displayName": "DadLine-原理图进度可视化",
 	"description": "[LoveFinder732]现在原理图做到哪了？很快了!马上就做完了!",
 	"version": "26.3.11",
 	"publisher": "",

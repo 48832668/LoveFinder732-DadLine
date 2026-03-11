@@ -1,0 +1,45 @@
+{
+	"name": "schematic-progress-tracker",
+	"uuid": "d2b61d94cd204cb0a47ace2be0364c64",
+	"displayName": "工程进度可视化",
+	"description": "实时统计原理图绘制进度，以任务清单形式展示元件引脚连接状态",
+	"version": "1.0.0",
+	"publisher": "",
+	"engines": {
+		"eda": "^3.0.0"
+	},
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "extension-store",
+		"url": ""
+	},
+	"categories": "Other",
+	"keywords": [
+		"进度",
+		"可视化",
+		"原理图"
+	],
+	"images": {
+		"logo": "./images/logo.png"
+	},
+	"homepage": "",
+	"bugs": "",
+	"activationEvents": {},
+	"entry": "./dist/index",
+	"dependentExtensions": {},
+	"headerMenus": {
+		"sch": [
+			{
+				"id": "progress-tracker",
+				"title": "工程进度",
+				"menuItems": [
+					{
+						"id": "openProgressPanel",
+						"title": "打开进度面板",
+						"registerFn": "openProgressPanel"
+					}
+				]
+			}
+		]
+	}
+}

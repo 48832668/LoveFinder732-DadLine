@@ -1,515 +1,61 @@
 <!doctype html>
 <html lang="zh-Hans">
-	<head>
-		<title>工程进度</title>
-		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<link rel="stylesheet" href="./css/bootstrap.min.css" />
-		<style>
-			:root {
-				--primary-color: #4a90d9;
-				--success-color: #28a745;
-				--bg-color: #f8f9fa;
-				--card-bg: #ffffff;
-				--text-color: #333;
-				--text-muted: #6c757d;
-				--border-color: #e9ecef;
-			}
 
-			* {
-				margin: 0;
-				padding: 0;
-				box-sizing: border-box;
-			}
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>工程进度</title>
+	<link rel="stylesheet" href="/iframe/css/bootstrap.min.css" />
+	<link rel="stylesheet" href="/iframe/css/style.css" />
+</head>
 
-			body {
-				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-				background: var(--bg-color);
-				color: var(--text-color);
-				font-size: 13px;
-				overflow: hidden;
-			}
-
-			.container-fluid {
-				padding: 12px;
-				height: 100vh;
-				display: flex;
-				flex-direction: column;
-			}
-
-			/* 顶部进度区域 */
-			.progress-header {
-				background: var(--card-bg);
-				border-radius: 8px;
-				padding: 16px;
-				margin-bottom: 12px;
-				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-			}
-
-			.progress-title {
-				display: flex;
-				justify-content: space-between;
-				align-items: center;
-				margin-bottom: 10px;
-			}
-
-			.progress-title h6 {
-				font-weight: 600;
-				margin: 0;
-				font-size: 14px;
-			}
-
-			.progress-percent {
-				font-size: 20px;
-				font-weight: 700;
-				color: var(--primary-color);
-			}
-
-			.progress-bar-container {
-				height: 8px;
-				background: var(--border-color);
-				border-radius: 4px;
-				overflow: hidden;
-			}
-
-			.progress-bar-fill {
-				height: 100%;
-				background: linear-gradient(90deg, var(--primary-color), var(--success-color));
-				border-radius: 4px;
-				transition: width 0.5s ease;
-			}
-
-			.progress-stats {
-				display: flex;
-				justify-content: space-between;
-				margin-top: 8px;
-				font-size: 12px;
-				color: var(--text-muted);
-			}
-
-			/* 任务清单区域 */
-			.task-list-container {
-				flex: 1;
-				overflow-y: auto;
-				background: var(--card-bg);
-				border-radius: 8px;
-				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-			}
-
-			.task-list-header {
-				padding: 10px 12px;
-				border-bottom: 1px solid var(--border-color);
-				font-weight: 600;
-				font-size: 12px;
-				color: var(--text-muted);
-				text-transform: uppercase;
-				letter-spacing: 0.5px;
-				position: sticky;
-				top: 0;
-				background: var(--card-bg);
-				z-index: 10;
-			}
-
-			.task-list {
-				padding: 4px 0;
-			}
-
-			.task-item {
-				display: flex;
-				align-items: center;
-				padding: 10px 12px;
-				border-bottom: 1px solid var(--border-color);
-				cursor: pointer;
-				transition: background 0.2s ease;
-			}
-
-			.task-item:hover {
-				background: rgba(74, 144, 217, 0.05);
-			}
-
-			.task-item.selected {
-				background: rgba(74, 144, 217, 0.1);
-			}
-
-			.task-item.completed {
-				animation: completeFade 0.6s ease forwards;
-			}
-
-			@keyframes completeFade {
-				0% {
-					opacity: 1;
-				}
-				50% {
-					opacity: 0.6;
-					background: rgba(40, 167, 69, 0.1);
-				}
-				100% {
-					opacity: 0.5;
-				}
-			}
-
-			.task-item.completed .task-name {
-				text-decoration: line-through;
-				color: var(--text-muted);
-			}
-
-			/* 引脚指示器 */
-			.pin-indicators {
-				display: flex;
-				gap: 3px;
-				flex-wrap: wrap;
-				max-width: 100px;
-			}
-
-			.pin-dot {
-				width: 8px;
-				height: 8px;
-				border-radius: 50%;
-				background: var(--border-color);
-				transition: all 0.3s ease;
-			}
-
-			.pin-dot.connected {
-				background: var(--success-color);
-				box-shadow: 0 0 4px rgba(40, 167, 69, 0.5);
-			}
-
-			/* 任务名称 */
-			.task-name {
-				flex: 1;
-				font-weight: 500;
-				margin-left: 10px;
-				white-space: nowrap;
-				overflow: hidden;
-				text-overflow: ellipsis;
-			}
-
-			/* 任务进度 */
-			.task-progress {
-				font-size: 11px;
-				color: var(--text-muted);
-				margin-left: 8px;
-				min-width: 36px;
-				text-align: right;
-			}
-
-			/* 空状态 */
-			.empty-state {
-				display: flex;
-				flex-direction: column;
-				align-items: center;
-				justify-content: center;
-				height: 200px;
-				color: var(--text-muted);
-			}
-
-			.empty-state svg {
-				width: 48px;
-				height: 48px;
-				margin-bottom: 12px;
-				opacity: 0.5;
-			}
-
-			/* 刷新按钮 */
-			.refresh-btn {
-				background: none;
-				border: none;
-				color: var(--text-muted);
-				cursor: pointer;
-				padding: 4px;
-				border-radius: 4px;
-				transition: all 0.2s ease;
-			}
-
-			.refresh-btn:hover {
-				color: var(--primary-color);
-				background: rgba(74, 144, 217, 0.1);
-			}
-
-			.refresh-btn.spinning svg {
-				animation: spin 1s linear infinite;
-			}
-
-			@keyframes spin {
-				from {
-					transform: rotate(0deg);
-				}
-				to {
-					transform: rotate(360deg);
-				}
-			}
-
-			/* 滚动条样式 */
-			.task-list-container::-webkit-scrollbar {
-				width: 6px;
-			}
-
-			.task-list-container::-webkit-scrollbar-track {
-				background: transparent;
-			}
-
-			.task-list-container::-webkit-scrollbar-thumb {
-				background: var(--border-color);
-				border-radius: 3px;
-			}
-
-			.task-list-container::-webkit-scrollbar-thumb:hover {
-				background: var(--text-muted);
-			}
-		</style>
-	</head>
-	<body>
-		<div class="container-fluid">
-			<!-- 顶部进度区域 -->
-			<div class="progress-header">
-				<div class="progress-title">
-					<h6>📊 原理图绘制进度</h6>
-					<span class="progress-percent" id="progressPercent">0%</span>
-				</div>
-				<div class="progress-bar-container">
-					<div class="progress-bar-fill" id="progressBar" style="width: 0%"></div>
-				</div>
-				<div class="progress-stats">
-					<span id="connectedCount">已连接: 0 引脚</span>
-					<span id="totalCount">总计: 0 引脚</span>
-				</div>
-			</div>
-
-			<!-- 任务清单区域 -->
-			<div class="task-list-container">
-				<div class="task-list-header">
-					元件清单
-					<button class="refresh-btn float-end" id="refreshBtn" title="刷新">
-						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
-							<path d="M21 3v5h-5"></path>
-						</svg>
-					</button>
-				</div>
-				<div class="task-list" id="taskList">
-					<!-- 动态生成 -->
-				</div>
-			</div>
+<body>
+	<!-- 顶部进度区域 -->
+	<div class="progress-header" id="progressHeader">
+		<div class="progress-circle">
+			<svg width="50" height="50" viewBox="0 0 80 80">
+				<circle class="bg" cx="40" cy="40" r="32"></circle>
+				<circle class="progress" cx="40" cy="40" r="32" stroke-dasharray="201" stroke-dashoffset="201"
+					id="progressCircle"></circle>
+			</svg>
+			<div class="progress-percent" id="progressPercent">0%</div>
 		</div>
+		<div class="progress-info">
+			<div class="progress-stats">
+				<span class="stat-item" id="pinStats">0/0 引脚</span>
+				<span class="stat-divider">|</span>
+				<span class="stat-item" id="compStats">0/0 元件</span>
+			</div>
+			<div class="motivation-text" id="motivation">📋 等待加载...</div>
+		</div>
+	</div>
 
-		<script src="./js/bootstrap.bundle.min.js"></script>
-		<script>
-			// 组件数据
-			let componentsData = [];
-			let selectedComponentId = null;
+	<!-- 工具栏 -->
+	<div class="toolbar">
+		<input type="text" class="search-input" id="searchInput" placeholder="搜索..." />
+		<button class="refresh-btn" id="refreshBtn" title="刷新全部">🔄</button>
+		<button class="refresh-btn auto-btn" id="autoRefreshBtn" title="自动刷新">▶️</button>
+	</div>
 
-			// 调试函数
-			function debugToast(message) {
-				try {
-					if (typeof eda !== 'undefined' && eda.sys_Message) {
-						eda.sys_Message.showToastMessage(message, undefined, 3000);
-					}
-				} catch (e) {
-					console.log('[ProgressPanel] ' + message);
-				}
-			}
+	<!-- 任务列表 -->
+	<div class="task-list" id="taskListContainer">
+		<div class="empty-state">
+			<div class="empty-icon">⏳</div>
+			<div>正在加载...</div>
+		</div>
+	</div>
 
-			// 初始化
-			document.addEventListener('DOMContentLoaded', () => {
-				debugToast('iframe已加载');
-				// 直接刷新数据
-				refreshProgressData();
+	<!-- 调试面板 -->
+	<div class="debug-panel">
+		<div class="debug-header" id="debugHeader">
+			<span id="debugToggleIcon">▶</span>
+			<span>调试</span>
+		</div>
+		<div class="debug-content" id="debugContent" style="display: none;"></div>
+	</div>
 
-				// 刷新按钮
-				document.getElementById('refreshBtn').addEventListener('click', () => {
-					const btn = document.getElementById('refreshBtn');
-					btn.classList.add('spinning');
-					refreshProgressData();
-					setTimeout(() => btn.classList.remove('spinning'), 1000);
-				});
-			});
+	<script src="/iframe/js/bootstrap.bundle.min.js"></script>
+	<script src="/dist/iframe/app.js"></script>
+</body>
 
-			// 刷新进度数据 - 直接使用eda API
-			async function refreshProgressData() {
-				debugToast('开始刷新数据...');
-
-				try {
-					// 检查eda是否可用
-					if (typeof eda === 'undefined') {
-						debugToast('eda对象不可用');
-						return;
-					}
-
-					// 获取所有元件
-					const components = await eda.sch_PrimitiveComponent.getAll();
-					debugToast('获取到元件数: ' + (components ? components.length : 0));
-
-					if (!components || components.length === 0) {
-						componentsData = [];
-						renderUI();
-						debugToast('无元件数据');
-						return;
-					}
-
-					// 处理每个元件
-					const componentInfos = [];
-					for (const component of components) {
-						const info = await processComponent(component);
-						componentInfos.push(info);
-					}
-
-					// 按位号排序
-					componentInfos.sort((a, b) => {
-						return (a.designator || '').localeCompare(b.designator || '', undefined, { numeric: true });
-					});
-
-					componentsData = componentInfos;
-					debugToast('处理完成，元件数: ' + componentInfos.length);
-					renderUI();
-				} catch (error) {
-					debugToast('刷新失败: ' + error);
-					console.error(error);
-				}
-			}
-
-			// 处理单个元件
-			async function processComponent(component) {
-				const primitiveId = component.primitiveId || '';
-				const designator = await getComponentDesignator(component);
-				const name = await getComponentName(component);
-
-				// 获取元件的所有引脚
-				const pins = await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(primitiveId);
-				const pinInfos = [];
-
-				if (pins && pins.length > 0) {
-					for (const pin of pins) {
-						const pinInfo = await processPin(pin);
-						pinInfos.push(pinInfo);
-					}
-				}
-
-				const connectedPins = pinInfos.filter(p => p.connected).length;
-				const totalPins = pinInfos.length;
-
-				return {
-					primitiveId,
-					designator,
-					name,
-					pins: pinInfos,
-					totalPins,
-					connectedPins,
-					completed: totalPins > 0 && connectedPins === totalPins,
-				};
-			}
-
-			// 处理单个引脚
-			async function processPin(pin) {
-				const number = await pin.getState_PinNumber?.() || '';
-				const name = await pin.getState_PinName?.() || '';
-				const net = await pin.getState_Net?.();
-				const connected = !!net && net !== '';
-
-				return { number, name, connected };
-			}
-
-			// 获取元件位号
-			async function getComponentDesignator(component) {
-				try {
-					return await component.getState_Designator?.() || 'U?';
-				} catch {
-					return 'U?';
-				}
-			}
-
-			// 获取元件名称
-			async function getComponentName(component) {
-				try {
-					return await component.getState_Name?.() || '';
-				} catch {
-					return '';
-				}
-			}
-
-			// 渲染UI
-			function renderUI() {
-				renderProgress();
-				renderTaskList();
-			}
-
-			// 渲染进度
-			function renderProgress() {
-				let totalPins = 0;
-				let connectedPins = 0;
-
-				componentsData.forEach(comp => {
-					totalPins += comp.totalPins;
-					connectedPins += comp.connectedPins;
-				});
-
-				const percent = totalPins > 0 ? Math.round((connectedPins / totalPins) * 100) : 0;
-
-				document.getElementById('progressPercent').textContent = percent + '%';
-				document.getElementById('progressBar').style.width = percent + '%';
-				document.getElementById('connectedCount').textContent = `已连接: ${connectedPins} 引脚`;
-				document.getElementById('totalCount').textContent = `总计: ${totalPins} 引脚`;
-			}
-
-			// 渲染任务列表
-			function renderTaskList() {
-				const container = document.getElementById('taskList');
-
-				if (componentsData.length === 0) {
-					container.innerHTML = `
-						<div class="empty-state">
-							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-								<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-								<line x1="9" y1="9" x2="15" y2="15"></line>
-								<line x1="15" y1="9" x2="9" y2="15"></line>
-							</svg>
-							<span>暂无元件数据</span>
-						</div>
-					`;
-					return;
-				}
-
-				// 排序：未完成在前，已完成后；选中置顶
-				const sorted = [...componentsData].sort((a, b) => {
-					if (a.primitiveId === selectedComponentId) return -1;
-					if (b.primitiveId === selectedComponentId) return 1;
-					if (a.completed !== b.completed) return a.completed ? 1 : -1;
-					return 0;
-				});
-
-				container.innerHTML = sorted.map(comp => {
-					const isSelected = comp.primitiveId === selectedComponentId;
-					const isCompleted = comp.completed;
-
-					return `
-						<div class="task-item ${isSelected ? 'selected' : ''} ${isCompleted ? 'completed' : ''}"
-							 data-id="${comp.primitiveId}"
-							 onclick="selectComponent('${comp.primitiveId}')">
-							<div class="pin-indicators">
-								${comp.pins.map(pin => `
-									<div class="pin-dot ${pin.connected ? 'connected' : ''}"
-										 title="${pin.name || pin.number}: ${pin.connected ? '已连接' : '未连接'}">
-									</div>
-								`).join('')}
-							</div>
-							<span class="task-name">${comp.designator || 'U?'}</span>
-							<span class="task-progress">${comp.connectedPins}/${comp.totalPins}</span>
-						</div>
-					`;
-				}).join('');
-			}
-
-			// 选择元件
-			async function selectComponent(primitiveId) {
-				try {
-					await eda.sch_SelectControl.clearSelected();
-					await eda.sch_SelectControl.doSelectPrimitives(primitiveId);
-					selectedComponentId = primitiveId;
-					renderTaskList();
-					debugToast('已选中元件');
-				} catch (error) {
-					debugToast('选中失败: ' + error);
-				}
-			}
-		</script>
-	</body>
 </html>

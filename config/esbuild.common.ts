@@ -19,3 +19,13 @@ export default {
 	define: {},
 	external: [],
 } satisfies Parameters<(typeof esbuild)['build']>[0];
+
+// iframe 应用单独配置
+export const iframeConfig = {
+	entryPoints: ['./src/iframe-app.ts'],
+	outfile: './dist/iframe/app.js',
+	bundle: true,
+	minify: false,
+	platform: 'browser' as const,
+	format: 'iife' as const,
+};

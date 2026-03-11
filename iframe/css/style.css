@@ -1,0 +1,464 @@
+/**
+ * DadLine - 工程进度可视化插件样式
+ * 紧凑版界面
+ */
+
+:root {
+	--primary-color: #3b82f6;
+	--success-color: #10b981;
+	--warning-color: #f59e0b;
+	--danger-color: #ef4444;
+	--bg-color: #f8fafc;
+	--card-bg: #ffffff;
+	--text-primary: #1e293b;
+	--text-secondary: #64748b;
+	--border-color: #e2e8f0;
+}
+
+body {
+	font-size: 11px;
+	background: var(--bg-color);
+	color: var(--text-primary);
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	min-height: 100vh;
+}
+
+/* ==================== 顶部进度区域 ==================== */
+
+.progress-header {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 12px;
+	color: white;
+	transition: background 0.5s ease;
+	flex-shrink: 0; /* 不允许收缩 */
+}
+
+.progress-header.progress-0 { background: linear-gradient(135deg, #64748b 0%, #475569 100%); }
+.progress-header.progress-10 { background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); }
+.progress-header.progress-30 { background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%); }
+.progress-header.progress-50 { background: linear-gradient(135deg, #d97706 0%, #b45309 100%); }
+.progress-header.progress-70 { background: linear-gradient(135deg, #65a30d 0%, #4d7c0f 100%); }
+.progress-header.progress-90 { background: linear-gradient(135deg, #059669 0%, #047857 100%); }
+.progress-header.progress-100 { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+
+.progress-circle {
+	width: 50px;
+	height: 50px;
+	position: relative;
+	flex-shrink: 0;
+}
+
+.progress-circle svg {
+	transform: rotate(-90deg);
+	width: 50px;
+	height: 50px;
+}
+
+.progress-circle .bg {
+	fill: none;
+	stroke: rgba(255,255,255,0.2);
+	stroke-width: 6;
+}
+
+.progress-circle .progress {
+	fill: none;
+	stroke: #fff;
+	stroke-width: 6;
+	stroke-linecap: round;
+	transition: stroke-dashoffset 0.5s ease;
+}
+
+.progress-percent {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	font-size: 12px;
+	font-weight: bold;
+}
+
+.progress-info {
+	flex: 1;
+	min-width: 0;
+}
+
+.progress-stats {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 10px;
+	opacity: 0.9;
+}
+
+.stat-item {
+	white-space: nowrap;
+}
+
+.stat-divider {
+	opacity: 0.5;
+}
+
+.motivation-text {
+	font-size: 12px;
+	font-weight: 500;
+	margin-top: 2px;
+}
+
+/* ==================== 工具栏 ==================== */
+
+.toolbar {
+	display: flex;
+	gap: 6px;
+	padding: 6px 8px;
+	background: var(--card-bg);
+	border-bottom: 1px solid var(--border-color);
+	align-items: center;
+	flex-shrink: 0; /* 不允许收缩 */
+}
+
+.search-input {
+	flex: 1;
+	padding: 4px 8px;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	font-size: 11px;
+	outline: none;
+	min-width: 0;
+}
+
+.search-input:focus {
+	border-color: var(--primary-color);
+}
+
+.refresh-btn {
+	padding: 4px 8px;
+	background: var(--primary-color);
+	color: white;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 11px;
+	transition: background 0.2s;
+}
+
+.refresh-btn:hover {
+	background: #2563eb;
+}
+
+.refresh-btn.auto-btn {
+	background: var(--text-secondary);
+}
+
+.refresh-btn.auto-btn:hover {
+	background: #475569;
+}
+
+.refresh-btn.auto-btn.active {
+	background: var(--success-color);
+}
+
+.refresh-btn.auto-btn.active:hover {
+	background: #059669;
+}
+
+/* ==================== 任务列表 ==================== */
+
+.task-list {
+	padding: 6px;
+	flex: 1;
+	overflow-y: auto;
+	min-height: 0; /* 允许flex子项收缩 */
+}
+
+.task-item {
+	background: var(--card-bg);
+	border-radius: 6px;
+	padding: 8px;
+	margin-bottom: 6px;
+	border: 1px solid var(--border-color);
+	transition: all 0.2s;
+	border-left: 3px solid transparent;
+	cursor: pointer;
+}
+
+.task-item:hover {
+	box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+	transform: translateX(2px);
+}
+
+.task-item.task-completed {
+	border-left-color: var(--success-color);
+}
+
+.task-item.task-progress {
+	border-left-color: var(--warning-color);
+}
+
+.task-item.task-pending {
+	border-left-color: var(--danger-color);
+}
+
+/* 完成动画 - 划走消失 */
+.task-item.completed-animate {
+	animation: completeSlide 0.8s ease forwards;
+}
+
+@keyframes completeSlide {
+	0% {
+		opacity: 1;
+		transform: translateX(0);
+	}
+	30% {
+		opacity: 1;
+		transform: translateX(5px);
+		background: #dcfce7;
+	}
+	100% {
+		opacity: 0;
+		transform: translateX(100%);
+		max-height: 0;
+		padding-top: 0;
+		padding-bottom: 0;
+		margin-bottom: 0;
+		border-width: 0;
+		overflow: hidden;
+	}
+}
+
+.task-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 4px;
+}
+
+.task-info {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-width: 0;
+}
+
+.task-icon {
+	font-size: 12px;
+}
+
+.task-designator {
+	font-weight: 600;
+	color: var(--text-primary);
+	font-size: 11px;
+}
+
+.task-name {
+	font-size: 10px;
+	color: var(--text-secondary);
+	max-width: 80px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.task-meta {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+}
+
+.task-page {
+	font-size: 9px;
+	color: var(--text-secondary);
+	background: var(--bg-color);
+	padding: 1px 4px;
+	border-radius: 3px;
+}
+
+.task-progress-text {
+	font-size: 10px;
+	font-weight: 500;
+	color: var(--text-secondary);
+}
+
+/* ==================== 进度条 ==================== */
+
+.task-progress-bar {
+	height: 3px;
+	background: var(--bg-color);
+	border-radius: 2px;
+	overflow: hidden;
+	margin-bottom: 4px;
+}
+
+.progress-bar-inner {
+	height: 100%;
+	border-radius: 2px;
+	transition: width 0.3s ease;
+}
+
+.progress-bar-inner.progress-complete {
+	background: var(--success-color);
+}
+
+.progress-bar-inner.progress-high {
+	background: #22c55e;
+}
+
+.progress-bar-inner.progress-medium {
+	background: var(--warning-color);
+}
+
+.progress-bar-inner.progress-low {
+	background: var(--danger-color);
+}
+
+/* ==================== 引脚指示 ==================== */
+
+.task-pins {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px;
+}
+
+.pin-dot {
+	font-size: 8px;
+	padding: 1px 3px;
+	border-radius: 2px;
+	background: #fee2e2;
+	color: #dc2626;
+	transition: all 0.2s;
+}
+
+.pin-dot.connected {
+	background: #dcfce7;
+	color: #16a34a;
+}
+
+.pin-dot.no-connect {
+	background: #e0e7ff;
+	color: #4f46e5;
+}
+
+.pin-more {
+	font-size: 8px;
+	padding: 1px 3px;
+	color: var(--text-secondary);
+}
+
+/* ==================== 空状态 ==================== */
+
+.empty-state {
+	text-align: center;
+	padding: 20px;
+	color: var(--text-secondary);
+}
+
+.empty-icon {
+	font-size: 24px;
+	margin-bottom: 4px;
+}
+
+/* ==================== 调试面板 ==================== */
+
+.debug-panel {
+	background: var(--card-bg);
+	border-top: 1px solid var(--border-color);
+	flex-shrink: 0; /* 不允许收缩 */
+	display: flex;
+	flex-direction: column;
+}
+
+.debug-header {
+	padding: 4px 10px;
+	background: #1e293b;
+	color: white;
+	cursor: pointer;
+	font-size: 10px;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	user-select: none;
+}
+
+.debug-header:hover {
+	background: #334155;
+}
+
+.debug-content {
+	flex: 1;
+	overflow-y: auto;
+	padding: 6px;
+	font-size: 9px;
+	font-family: monospace;
+	background: #0f172a;
+	max-height: 120px;
+}
+
+.debug-log {
+	padding: 1px 4px;
+	margin-bottom: 1px;
+	border-radius: 2px;
+}
+
+.debug-log.debug-info {
+	color: #94a3b8;
+}
+
+.debug-log.debug-success {
+	color: #4ade80;
+}
+
+.debug-log.debug-warning {
+	color: #fbbf24;
+	background: rgba(251, 191, 36, 0.1);
+}
+
+.debug-log.debug-error {
+	color: #f87171;
+	background: rgba(248, 113, 113, 0.1);
+}
+
+.debug-time {
+	color: #64748b;
+	margin-right: 4px;
+}
+
+.debug-msg {
+	color: #e2e8f0;
+}
+
+.debug-details {
+	margin: 2px 0 0 0;
+	padding: 2px;
+	background: #1e293b;
+	border-radius: 2px;
+	color: #94a3b8;
+	font-size: 8px;
+	white-space: pre-wrap;
+	word-break: break-all;
+	max-height: 40px;
+	overflow: hidden;
+}
+
+/* ==================== 滚动条美化 ==================== */
+
+.task-list::-webkit-scrollbar {
+	width: 4px;
+}
+
+.task-list::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.task-list::-webkit-scrollbar-thumb {
+	background: var(--border-color);
+	border-radius: 2px;
+}
+
+.task-list::-webkit-scrollbar-thumb:hover {
+	background: var(--text-secondary);
+}

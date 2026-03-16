@@ -3,177 +3,6 @@
  * 任务清单 + 激励式界面
  */
 
-// ==================== 配置管理 ====================
-
-// 当前配置版本号
-const CONFIG_VERSION = '26.3.16';
-
-/**
- * 供电检查策略配置
- */
-interface PowerCheckConfig {
-	enabled: boolean;
-	designatorPrefixes: string[];
-	customRules: string[];
-}
-
-/**
- * 插件配置接口
- */
-interface PluginConfig {
-	version: string;
-	powerCheck: PowerCheckConfig;
-	lastUpdated: number;
-}
-
-/**
- * 默认配置
- */
-const DEFAULT_CONFIG: PluginConfig = {
-	version: CONFIG_VERSION,
-	powerCheck: {
-		enabled: true,
-		designatorPrefixes: ['U'],
-		customRules: [],
-	},
-	lastUpdated: Date.now(),
-};
-
-/**
- * 配置管理器
- */
-class ConfigManager {
-	private config: PluginConfig;
-	private listeners: Array<(config: PluginConfig) => void> = [];
-
-	constructor() {
-		this.config = this.loadFromStorage();
-	}
-
-	private loadFromStorage(): PluginConfig {
-		try {
-			const stored = localStorage.getItem('dadline-config');
-			if (stored) {
-				const parsed = JSON.parse(stored) as Partial<PluginConfig>;
-				return this.mergeConfig(parsed);
-			}
-		}
-		catch (e) {
-			console.warn('[ConfigManager] 加载配置失败:', e);
-		}
-		return { ...DEFAULT_CONFIG };
-	}
-
-	private mergeConfig(stored: Partial<PluginConfig>): PluginConfig {
-		return {
-			version: CONFIG_VERSION,
-			powerCheck: {
-				enabled: stored.powerCheck?.enabled ?? DEFAULT_CONFIG.powerCheck.enabled,
-				designatorPrefixes: stored.powerCheck?.designatorPrefixes ?? [...DEFAULT_CONFIG.powerCheck.designatorPrefixes],
-				customRules: stored.powerCheck?.customRules ?? [...DEFAULT_CONFIG.powerCheck.customRules],
-			},
-			lastUpdated: stored.lastUpdated ?? Date.now(),
-		};
-	}
-
-	private saveToStorage(): void {
-		try {
-			this.config.lastUpdated = Date.now();
-			localStorage.setItem('dadline-config', JSON.stringify(this.config));
-		}
-		catch (e) {
-			console.warn('[ConfigManager] 保存配置失败:', e);
-		}
-	}
-
-	public getConfig(): PluginConfig {
-		return { ...this.config };
-	}
-
-	public setPowerCheckConfig(powerCheck: PowerCheckConfig): void {
-		this.config.powerCheck = { ...powerCheck };
-		this.saveToStorage();
-		this.notifyListeners();
-	}
-
-	public shouldCheckPower(designator: string): boolean {
-		if (!this.config.powerCheck.enabled) {
-			return false;
-		}
-
-		for (const prefix of this.config.powerCheck.designatorPrefixes) {
-			if (designator.toUpperCase().startsWith(prefix.toUpperCase())) {
-				return true;
-			}
-		}
-
-		for (const rule of this.config.powerCheck.customRules) {
-			try {
-				const regex = new RegExp(rule, 'i');
-				if (regex.test(designator)) {
-					return true;
-				}
-			}
-			catch {
-				// 忽略无效的正则表达式
-			}
-		}
-
-		return false;
-	}
-
-	public exportConfig(): string {
-		const exportData = {
-			...this.config,
-			version: CONFIG_VERSION,
-			exportedAt: Date.now(),
-		};
-		return JSON.stringify(exportData, null, 2);
-	}
-
-	public importConfig(jsonString: string): boolean {
-		try {
-			const imported = JSON.parse(jsonString) as Partial<PluginConfig>;
-			if (!imported.powerCheck) {
-				throw new Error('配置格式错误：缺少 powerCheck 字段');
-			}
-			this.config = this.mergeConfig(imported);
-			this.saveToStorage();
-			this.notifyListeners();
-			return true;
-		}
-		catch (e) {
-			console.error('[ConfigManager] 导入配置失败:', e);
-			return false;
-		}
-	}
-
-	public resetToDefault(): void {
-		this.config = { ...DEFAULT_CONFIG };
-		this.saveToStorage();
-		this.notifyListeners();
-	}
-
-	public addListener(listener: (config: PluginConfig) => void): void {
-		this.listeners.push(listener);
-	}
-
-	private notifyListeners(): void {
-		const configCopy = this.getConfig();
-		this.listeners.forEach((listener) => {
-			try {
-				listener(configCopy);
-			}
-			catch (e) {
-				console.error('[ConfigManager] 监听器执行失败:', e);
-			}
-		});
-	}
-}
-
-// 全局配置管理器实例
-const configManager = new ConfigManager();
-
 // ==================== 数据结构 ====================
 
 interface PinInfo {
@@ -183,8 +12,8 @@ interface PinInfo {
 	y: number;
 	net: string | null;
 	connected: boolean;
-	detectMethod: string; // 调试：检测方法
-	noConnect: boolean; // 是否有非连接标识
+	detectMethod: string;
+	noConnect: boolean;
 }
 
 interface ComponentTask {
@@ -198,9 +27,6 @@ interface ComponentTask {
 	connectedPins: number;
 	progress: number;
 	completed: boolean;
-	needsPowerCheck?: boolean; // 是否需要供电检查
-	powerPinsConnected?: number; // 已连接的电源引脚数
-	powerPinsTotal?: number; // 电源引脚总数
 }
 
 interface PageData {
@@ -247,7 +73,7 @@ let searchText = '';
 let debugExpanded = false;
 let autoRefreshEnabled = false;
 let autoRefreshInterval: number | null = null;
-const completedPrimitiveIds: Map<string, string> = new Map(); // primitiveId -> pageUuid，记录已完成的元件
+const completedPrimitiveIds: Map<string, string> = new Map();
 
 // ==================== DOM 元素 ====================
 
@@ -263,34 +89,7 @@ function addDebugLog(level: DebugLog['level'], message: string, details?: any): 
 		details,
 	};
 	debugLogs.push(log);
-	// 不再输出到 console，由定时器统一输出
 	renderDebugPanel();
-}
-
-// 每秒输出缓冲池信息到 console
-let consoleLogInterval: number | null = null;
-
-function startConsoleLog(): void {
-	if (consoleLogInterval)
-		return;
-
-	consoleLogInterval = window.setInterval(() => {
-		if (memoryBuffer.components.length === 0) {
-			// eslint-disable-next-line no-console
-			console.log('[DadLine] 缓冲池为空');
-			return;
-		}
-
-		// eslint-disable-next-line no-console
-		console.log('===== DadLine 缓冲池 =====');
-		for (const comp of memoryBuffer.components) {
-			const status = completedPrimitiveIds.has(comp.primitiveId) ? '✅' : `${comp.progress}%`;
-			// eslint-disable-next-line no-console
-			console.log(`${comp.pageName} | ${comp.connectedPins}/${comp.totalPins}引脚 | ${comp.designator} | ${comp.name || '-'} | ${status}`);
-		}
-		// eslint-disable-next-line no-console
-		console.log(`总计: ${completedPrimitiveIds.size}/${memoryBuffer.components.length} 元件完成, ${memoryBuffer.connectedPins}/${memoryBuffer.totalPins} 引脚连接`);
-	}, 1000);
 }
 
 function renderDebugPanel(): void {
@@ -309,8 +108,6 @@ function renderDebugPanel(): void {
 	container.scrollTop = container.scrollHeight;
 }
 
-// ==================== 工具函数 ====================
-
 // ==================== 图页扫描核心函数 ====================
 
 interface ScanPageResult {
@@ -320,10 +117,6 @@ interface ScanPageResult {
 	noConnectCount: number;
 }
 
-/**
- * 扫描单个图页，返回元件和连接信息
- * 这是两个刷新函数共用的底层函数
- */
 async function scanSchematicPage(pageUuid: string, pageName: string): Promise<ScanPageResult> {
 	const result: ScanPageResult = {
 		components: [],
@@ -336,7 +129,7 @@ async function scanSchematicPage(pageUuid: string, pageName: string): Promise<Sc
 		await edaApi.dmt_EditorControl.openDocument(pageUuid);
 		await new Promise(r => setTimeout(r, 100));
 
-		// ===== 1. 获取导线并建立坐标映射 =====
+		// 获取导线并建立坐标映射
 		const wires = (await edaApi.sch_PrimitiveWire.getAll()) || [];
 		result.wireCount = wires.length;
 
@@ -372,7 +165,7 @@ async function scanSchematicPage(pageUuid: string, pageName: string): Promise<Sc
 			catch {}
 		}
 
-		// ===== 2. 获取网络标签并建立坐标映射 =====
+		// 获取网络标签并建立坐标映射
 		let netLabels: any[] = [];
 		try {
 			netLabels = (await edaApi.sch_PrimitiveComponent.getAll(
@@ -397,7 +190,7 @@ async function scanSchematicPage(pageUuid: string, pageName: string): Promise<Sc
 			catch {}
 		}
 
-		// ===== 3. 获取非连接标识（备用，主要通过引脚 noConnected 属性检测）=====
+		// 获取非连接标识
 		let noConnectFlags: any[] = [];
 		try {
 			noConnectFlags = (await edaApi.sch_PrimitiveComponent.getAll(
@@ -421,7 +214,7 @@ async function scanSchematicPage(pageUuid: string, pageName: string): Promise<Sc
 			catch {}
 		}
 
-		// ===== 4. 获取元件并检测引脚连接状态 =====
+		// 获取元件并检测引脚连接状态
 		const comps = await edaApi.sch_PrimitiveComponent.getAll();
 
 		for (const comp of comps || []) {
@@ -456,7 +249,7 @@ async function scanSchematicPage(pageUuid: string, pageName: string): Promise<Sc
 					let detectMethod = 'none';
 					let noConnect = false;
 
-					// 方式0：检查引脚的 noConnected 属性（非连接标识）
+					// 检查引脚的 noConnected 属性
 					const pinNoConnected = pin.noConnected ?? pin.getState_NoConnected?.();
 					if (pinNoConnected === true || pinNoConnected === 'true' || pinNoConnected === 1) {
 						noConnect = true;
@@ -464,21 +257,21 @@ async function scanSchematicPage(pageUuid: string, pageName: string): Promise<Sc
 						connected = true;
 					}
 
-					// 方式1：检查非连接标识坐标（备用）
+					// 检查非连接标识坐标
 					if (!connected && noConnectCoordMap.has(key)) {
 						noConnect = true;
 						detectMethod = 'no_connect_flag';
 						connected = true;
 					}
 
-					// 方式2：检查网络标签
+					// 检查网络标签
 					if (!connected && netLabelCoordMap.has(key)) {
 						net = netLabelCoordMap.get(key) || null;
 						connected = true;
 						detectMethod = 'netlabel_coord';
 					}
 
-					// 方式3：检查导线
+					// 检查导线
 					if (!connected && wireCoordMap.has(key)) {
 						const wireInfo = wireCoordMap.get(key);
 						net = wireInfo?.net || null;
@@ -486,7 +279,7 @@ async function scanSchematicPage(pageUuid: string, pageName: string): Promise<Sc
 						detectMethod = 'wire_coord';
 					}
 
-					// 方式4：尝试直接读取引脚属性
+					// 尝试直接读取引脚属性
 					if (!connected) {
 						try {
 							const pinNet = pin.net ?? pin.getState_Net?.();
@@ -499,7 +292,7 @@ async function scanSchematicPage(pageUuid: string, pageName: string): Promise<Sc
 						catch {}
 					}
 
-					// 方式5：检查元件的net属性
+					// 检查元件的net属性
 					if (!connected) {
 						try {
 							const compNet = comp.net ?? comp.getState_Net?.();
@@ -553,7 +346,7 @@ async function scanSchematicPage(pageUuid: string, pageName: string): Promise<Sc
 	return result;
 }
 
-// ==================== 其他工具函数 ====================
+// ==================== 工具函数 ====================
 
 function showToast(msg: string, type: 'success' | 'error' | 'warning' | 'info' = 'info'): void {
 	if (edaApi?.sys_Message) {
@@ -573,9 +366,6 @@ function showToast(msg: string, type: 'success' | 'error' | 'warning' | 'info' =
 
 // ==================== 数据加载 ====================
 
-/**
- * 刷新当前图页数据（不跳转页面）
- */
 async function refreshCurrentPageOnly(): Promise<void> {
 	addDebugLog('info', '刷新当前图页...');
 
@@ -597,7 +387,6 @@ async function refreshCurrentPageOnly(): Promise<void> {
 
 		addDebugLog('info', `当前图页: ${pageName}`);
 
-		// 使用共用的扫描函数
 		const scanResult = await scanSchematicPage(pageUuid, pageName);
 
 		addDebugLog('info', `找到 ${scanResult.wireCount} 条导线`);
@@ -606,10 +395,7 @@ async function refreshCurrentPageOnly(): Promise<void> {
 		addDebugLog('info', `找到 ${scanResult.noConnectCount} 个非连接标识`);
 		addDebugLog('info', `找到 ${scanResult.components.length} 个元件`);
 
-		// 记录当前页所有元件ID（用于检测删除的元件）
 		const currentPagePrimitiveIds = new Set<string>();
-
-		// 更新当前图页的元件数据
 		let updatedCount = 0;
 		let newConnectedPins = 0;
 		let newTotalPins = 0;
@@ -621,16 +407,13 @@ async function refreshCurrentPageOnly(): Promise<void> {
 			const connectedCount = comp.connectedPins;
 			const isNowCompleted = comp.completed;
 
-			// 检测是否是新完成的元件
 			const wasCompleted = completedPrimitiveIds.has(comp.primitiveId);
 			const isNewlyCompleted = isNowCompleted && !wasCompleted;
 
-			// 查找并更新现有元件
 			const existingIndex = memoryBuffer.components.findIndex(
 				c => c.primitiveId === comp.primitiveId && c.schematicPageUuid === pageUuid,
 			);
 
-			// 更新或添加元件（保留已完成元件的数据在缓存中）
 			if (existingIndex >= 0) {
 				memoryBuffer.components[existingIndex] = comp;
 				updatedCount++;
@@ -647,7 +430,6 @@ async function refreshCurrentPageOnly(): Promise<void> {
 				}
 			}
 
-			// 更新完成状态标记
 			if (isNowCompleted) {
 				completedPrimitiveIds.set(comp.primitiveId, pageUuid);
 			}
@@ -659,7 +441,6 @@ async function refreshCurrentPageOnly(): Promise<void> {
 			newTotalPins += totalPins;
 		}
 
-		// 移除当前页中已删除的元件
 		const beforeCount = memoryBuffer.components.length;
 		const deletedFromCurrentPage: string[] = [];
 		memoryBuffer.components = memoryBuffer.components.filter((c) => {
@@ -677,13 +458,10 @@ async function refreshCurrentPageOnly(): Promise<void> {
 			addDebugLog('info', `移除了 ${removedCount} 个已删除的元件`);
 		}
 
-		// 清理已完成记录中当前页已删除的元件
 		for (const id of deletedFromCurrentPage) {
 			completedPrimitiveIds.delete(id);
 		}
 
-		// 更新总进度（保留其他页面的数据）
-		// 现在已完成元件的数据也保留在 memoryBuffer.components 中
 		let otherPagesPins = 0;
 		let otherPagesConnected = 0;
 		for (const comp of memoryBuffer.components) {
@@ -734,15 +512,13 @@ async function refreshData(): Promise<void> {
 		const currentPage = await edaApi.dmt_Schematic.getCurrentSchematicPageInfo();
 		const currentPageUuid = currentPage?.uuid;
 
-		// 重置缓冲区
 		memoryBuffer.pages = [];
 		memoryBuffer.components = [];
 		memoryBuffer.currentPageUuid = currentPageUuid;
 		memoryBuffer.totalPins = 0;
 		memoryBuffer.connectedPins = 0;
-		completedPrimitiveIds.clear(); // 清除完成记录
+		completedPrimitiveIds.clear();
 
-		// 构建页面列表
 		for (let i = 0; i < allPages.length; i++) {
 			const page = allPages[i];
 			memoryBuffer.pages.push({
@@ -752,7 +528,6 @@ async function refreshData(): Promise<void> {
 			});
 		}
 
-		// 遍历所有图页，使用共用的扫描函数
 		for (const page of memoryBuffer.pages) {
 			addDebugLog('info', `扫描图页: ${page.name}`);
 
@@ -764,21 +539,17 @@ async function refreshData(): Promise<void> {
 			addDebugLog('info', `图页 ${page.name}: 找到 ${scanResult.noConnectCount} 个非连接标识`);
 			addDebugLog('info', `图页 ${page.name}: 找到 ${scanResult.components.length} 个元件`);
 
-			// 处理扫描结果
 			for (const comp of scanResult.components) {
-				// 所有元件都添加到缓存中（保留数据用于切换图页时统计）
 				memoryBuffer.components.push(comp);
 				memoryBuffer.totalPins += comp.totalPins;
 				memoryBuffer.connectedPins += comp.connectedPins;
 
-				// 已完成的元件记录到完成列表
 				if (comp.completed) {
 					completedPrimitiveIds.set(comp.primitiveId, page.uuid);
 				}
 			}
 		}
 
-		// 恢复原当前图页
 		if (currentPageUuid) {
 			try {
 				await edaApi.dmt_EditorControl.openDocument(currentPageUuid);
@@ -786,7 +557,6 @@ async function refreshData(): Promise<void> {
 			catch {}
 		}
 
-		// 计算总进度
 		memoryBuffer.totalProgress = memoryBuffer.totalPins > 0
 			? Math.round((memoryBuffer.connectedPins / memoryBuffer.totalPins) * 100)
 			: 0;
@@ -818,7 +588,6 @@ function renderHeader(): void {
 	const completedCount = completedPrimitiveIds.size;
 	const totalCount = components.length;
 
-	// 更新进度数字
 	const progressPercent = $('progressPercent');
 	const pinStats = $('pinStats');
 	const compStats = $('compStats');
@@ -833,21 +602,17 @@ function renderHeader(): void {
 	if (motivation)
 		motivation.textContent = getMotivationText(totalProgress, completedCount, totalCount);
 
-	// 更新圆形进度条
 	const progressCircle = $('progressCircle') as SVGCircleElement;
 	if (progressCircle) {
-		const circumference = 2 * Math.PI * 32; // r=32
+		const circumference = 2 * Math.PI * 32;
 		const offset = circumference - (totalProgress / 100) * circumference;
 		progressCircle.style.strokeDasharray = `${circumference}`;
 		progressCircle.style.strokeDashoffset = `${offset}`;
 	}
 
-	// 更新背景渐变
 	const progressHeader = $('progressHeader');
 	if (progressHeader) {
-		// 移除所有进度class
 		progressHeader.classList.remove('progress-0', 'progress-10', 'progress-30', 'progress-50', 'progress-70', 'progress-90', 'progress-100');
-		// 添加对应的进度class
 		if (totalProgress >= 100) {
 			progressHeader.classList.add('progress-100');
 		}
@@ -877,10 +642,8 @@ function renderTaskList(): void {
 	if (!container)
 		return;
 
-	// 过滤掉已完成的元件（已在动画中移除）
 	let filtered = memoryBuffer.components.filter(c => !completedPrimitiveIds.has(c.primitiveId));
 
-	// 搜索过滤
 	if (searchText) {
 		const lower = searchText.toLowerCase();
 		filtered = filtered.filter(c =>
@@ -889,7 +652,6 @@ function renderTaskList(): void {
 		);
 	}
 
-	// 排序：进度高的在前，相同进度按位号排序
 	filtered.sort((a, b) => {
 		if (a.progress !== b.progress)
 			return b.progress - a.progress;
@@ -897,7 +659,6 @@ function renderTaskList(): void {
 	});
 
 	if (filtered.length === 0) {
-		// 判断是搜索无结果还是全部完成
 		let emptyMessage = '暂无元件数据';
 		let emptyIcon = '📋';
 
@@ -927,27 +688,19 @@ function renderTaskItem(comp: ComponentTask): string {
 	const statusClass = comp.completed ? 'task-completed' : (comp.progress > 0 ? 'task-progress' : 'task-pending');
 	const completedClass = comp.completed ? 'completed-animate' : '';
 
-	// 检查是否需要供电检查
-	const needsPowerCheck = configManager.shouldCheckPower(comp.designator);
-	const powerCheckIcon = needsPowerCheck ? '⚡' : '';
-	const powerCheckClass = needsPowerCheck ? 'needs-power-check' : '';
-
-	// 引脚排序：未连接的排在前面，方便用户查找
 	const sortedPins = [...comp.pins].sort((a, b) => {
-		// 已连接的排在后面
 		if (a.connected !== b.connected) {
 			return a.connected ? 1 : -1;
 		}
-		// 同状态按引脚号排序
 		return (a.number || '').localeCompare(b.number || '', undefined, { numeric: true });
 	});
 
 	return `
-		<div class="task-item ${statusClass} ${completedClass} ${powerCheckClass}" data-primitive-id="${comp.primitiveId}" data-page-uuid="${comp.schematicPageUuid}">
+		<div class="task-item ${statusClass} ${completedClass}" data-primitive-id="${comp.primitiveId}" data-page-uuid="${comp.schematicPageUuid}">
 			<div class="task-header">
 				<div class="task-info">
 					<span class="task-icon">${statusIcon}</span>
-					<span class="task-designator">${comp.designator} ${powerCheckIcon}</span>
+					<span class="task-designator">${comp.designator}</span>
 					<span class="task-name">${comp.name || '-'}</span>
 				</div>
 				<div class="task-meta">
@@ -981,7 +734,6 @@ function getProgressClass(progress: number): string {
 }
 
 function getMotivationText(progress: number, completed: number, total: number): string {
-	// 根据进度百分比细化激励标语
 	if (progress >= 100)
 		return '🎉 完美！原理图全部完成！';
 	if (progress >= 95)
@@ -1035,7 +787,6 @@ function renderEmptyState(message: string): void {
 		`;
 	}
 
-	// 重置背景
 	const progressHeader = $('progressHeader');
 	if (progressHeader) {
 		progressHeader.classList.remove('progress-0', 'progress-10', 'progress-30', 'progress-50', 'progress-70', 'progress-90', 'progress-100');
@@ -1071,11 +822,9 @@ function toggleAutoRefresh(): void {
 }
 
 function initEvents(): void {
-	// 刷新按钮 - 点击时停止自动刷新
 	const refreshBtn = $('refreshBtn');
 	if (refreshBtn) {
 		refreshBtn.onclick = () => {
-			// 停止自动刷新
 			if (autoRefreshEnabled) {
 				toggleAutoRefresh();
 			}
@@ -1083,13 +832,11 @@ function initEvents(): void {
 		};
 	}
 
-	// 自动刷新按钮
 	const autoRefreshBtn = $('autoRefreshBtn');
 	if (autoRefreshBtn) {
 		autoRefreshBtn.onclick = () => toggleAutoRefresh();
 	}
 
-	// 搜索框
 	const searchInput = $('searchInput') as HTMLInputElement;
 	if (searchInput) {
 		searchInput.oninput = (e) => {
@@ -1098,7 +845,6 @@ function initEvents(): void {
 		};
 	}
 
-	// 元件点击事件（事件委托）
 	const taskListContainer = $('taskListContainer');
 	if (taskListContainer) {
 		taskListContainer.addEventListener('click', async (e) => {
@@ -1116,7 +862,6 @@ function initEvents(): void {
 		});
 	}
 
-	// 调试面板折叠
 	const debugHeader = $('debugHeader');
 	if (debugHeader) {
 		debugHeader.onclick = () => {
@@ -1131,304 +876,6 @@ function initEvents(): void {
 			}
 		};
 	}
-
-	// 配置按钮
-	const configBtn = $('configBtn');
-	if (configBtn) {
-		configBtn.onclick = () => {
-			openConfigModal();
-		};
-	}
-
-	// 配置模态框事件
-	initConfigModalEvents();
-}
-
-// ==================== 配置管理界面 ====================
-
-// 当前编辑中的配置
-let editingConfig: PluginConfig = configManager.getConfig();
-
-/**
- * 打开配置模态框
- */
-function openConfigModal(): void {
-	editingConfig = configManager.getConfig();
-	renderConfigModal();
-
-	const modalElement = document.getElementById('configModal');
-	if (modalElement) {
-		const modal = new (window as any).bootstrap.Modal(modalElement);
-		modal.show();
-	}
-}
-
-/**
- * 渲染配置模态框内容
- */
-function renderConfigModal(): void {
-	// 更新供电检查启用状态
-	const powerCheckEnabled = $('powerCheckEnabled') as HTMLInputElement;
-	if (powerCheckEnabled) {
-		powerCheckEnabled.checked = editingConfig.powerCheck.enabled;
-	}
-
-	// 渲染前缀标签
-	renderPrefixTags();
-
-	// 渲染自定义规则
-	renderCustomRules();
-
-	// 更新版本号显示
-	const configVersion = $('configVersion');
-	if (configVersion) {
-		configVersion.textContent = editingConfig.version;
-	}
-}
-
-/**
- * 渲染前缀标签
- */
-function renderPrefixTags(): void {
-	const container = $('prefixTags');
-	if (!container)
-		return;
-
-	container.innerHTML = editingConfig.powerCheck.designatorPrefixes.map(prefix => `
-		<span class="prefix-tag">
-			${prefix}
-			<span class="remove-btn" data-prefix="${prefix}">&times;</span>
-		</span>
-	`).join('');
-
-	// 绑定删除事件
-	container.querySelectorAll('.remove-btn').forEach((btn) => {
-		btn.addEventListener('click', (e) => {
-			const prefix = (e.currentTarget as HTMLElement).dataset.prefix;
-			if (prefix) {
-				editingConfig.powerCheck.designatorPrefixes = editingConfig.powerCheck.designatorPrefixes.filter(p => p !== prefix);
-				renderPrefixTags();
-			}
-		});
-	});
-}
-
-/**
- * 渲染自定义规则
- */
-function renderCustomRules(): void {
-	const container = $('customRules');
-	if (!container)
-		return;
-
-	container.innerHTML = editingConfig.powerCheck.customRules.map(rule => `
-		<div class="custom-rule">
-			<span>${rule}</span>
-			<span class="remove-btn" data-rule="${rule}">&times;</span>
-		</div>
-	`).join('');
-
-	// 绑定删除事件
-	container.querySelectorAll('.remove-btn').forEach((btn) => {
-		btn.addEventListener('click', (e) => {
-			const rule = (e.currentTarget as HTMLElement).dataset.rule;
-			if (rule) {
-				editingConfig.powerCheck.customRules = editingConfig.powerCheck.customRules.filter(r => r !== rule);
-				renderCustomRules();
-			}
-		});
-	});
-}
-
-/**
- * 初始化配置模态框事件
- */
-function initConfigModalEvents(): void {
-	// 供电检查启用开关
-	const powerCheckEnabled = $('powerCheckEnabled');
-	if (powerCheckEnabled) {
-		powerCheckEnabled.addEventListener('change', (e) => {
-			editingConfig.powerCheck.enabled = (e.target as HTMLInputElement).checked;
-		});
-	}
-
-	// 添加前缀
-	const addPrefixBtn = $('addPrefixBtn');
-	const newPrefixInput = $('newPrefixInput') as HTMLInputElement;
-	if (addPrefixBtn && newPrefixInput) {
-		addPrefixBtn.addEventListener('click', () => {
-			const prefix = newPrefixInput.value.trim().toUpperCase();
-			if (prefix && !editingConfig.powerCheck.designatorPrefixes.includes(prefix)) {
-				editingConfig.powerCheck.designatorPrefixes.push(prefix);
-				newPrefixInput.value = '';
-				renderPrefixTags();
-			}
-		});
-
-		// 回车键添加
-		newPrefixInput.addEventListener('keypress', (e) => {
-			if (e.key === 'Enter') {
-				addPrefixBtn.click();
-			}
-		});
-	}
-
-	// 添加自定义规则
-	const addRuleBtn = $('addRuleBtn');
-	const newRuleInput = $('newRuleInput') as HTMLInputElement;
-	if (addRuleBtn && newRuleInput) {
-		addRuleBtn.addEventListener('click', () => {
-			const rule = newRuleInput.value.trim();
-			if (rule) {
-				try {
-					// 验证正则表达式
-					// eslint-disable-next-line no-new
-					new RegExp(rule);
-					if (!editingConfig.powerCheck.customRules.includes(rule)) {
-						editingConfig.powerCheck.customRules.push(rule);
-						newRuleInput.value = '';
-						renderCustomRules();
-					}
-				}
-				catch {
-					showToast('无效的正则表达式', 'error');
-				}
-			}
-		});
-
-		// 回车键添加
-		newRuleInput.addEventListener('keypress', (e) => {
-			if (e.key === 'Enter') {
-				addRuleBtn.click();
-			}
-		});
-	}
-
-	// 导出配置
-	const exportConfigBtn = $('exportConfigBtn');
-	if (exportConfigBtn) {
-		exportConfigBtn.addEventListener('click', () => {
-			const configJson = configManager.exportConfig();
-			const blob = new Blob([configJson], { type: 'application/json' });
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.href = url;
-			a.download = `dadline-config-v${CONFIG_VERSION}.json`;
-			document.body.appendChild(a);
-			a.click();
-			document.body.removeChild(a);
-			URL.revokeObjectURL(url);
-			addDebugLog('success', '配置已导出');
-		});
-	}
-
-	// 导入配置
-	const importConfigBtn = $('importConfigBtn');
-	const configFileInput = $('configFileInput') as HTMLInputElement;
-	if (importConfigBtn && configFileInput) {
-		importConfigBtn.addEventListener('click', () => {
-			configFileInput.click();
-		});
-
-		configFileInput.addEventListener('change', (ev) => {
-			const file = (ev.target as HTMLInputElement).files?.[0];
-			if (file) {
-				const reader = new FileReader();
-				reader.onload = (event) => {
-					const content = event.target?.result as string;
-					if (configManager.importConfig(content)) {
-						editingConfig = configManager.getConfig();
-						renderConfigModal();
-						addDebugLog('success', '配置已导入');
-						// 重新渲染任务列表以应用新配置
-						render();
-					}
-					else {
-						showToast('配置导入失败，请检查文件格式', 'error');
-					}
-				};
-				reader.readAsText(file);
-			}
-			// 清空 input 以便可以重复选择同一文件
-			configFileInput.value = '';
-		});
-	}
-
-	// 恢复默认配置
-	const resetConfigBtn = $('resetConfigBtn');
-	if (resetConfigBtn) {
-		resetConfigBtn.addEventListener('click', () => {
-			// 使用 Bootstrap Modal 替代 confirm
-			const confirmModalHtml = `
-				<div class="modal fade" id="confirmResetModal" tabindex="-1">
-					<div class="modal-dialog modal-sm">
-						<div class="modal-content">
-							<div class="modal-header">
-								<h6 class="modal-title">确认恢复默认</h6>
-							</div>
-							<div class="modal-body">
-								<p class="mb-0">确定要恢复默认配置吗？这将覆盖当前所有配置。</p>
-							</div>
-							<div class="modal-footer">
-								<button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
-								<button type="button" class="btn btn-danger btn-sm" id="confirmResetBtn">确定</button>
-							</div>
-						</div>
-					</div>
-				</div>
-			`;
-
-			// 创建临时模态框
-			const tempDiv = document.createElement('div');
-			tempDiv.innerHTML = confirmModalHtml;
-			document.body.appendChild(tempDiv);
-
-			const modalElement = tempDiv.querySelector('#confirmResetModal') as HTMLElement;
-
-			const modal = new (window as any).bootstrap.Modal(modalElement);
-
-			// 绑定确认按钮事件
-			const confirmBtn = modalElement.querySelector('#confirmResetBtn');
-			if (confirmBtn) {
-				confirmBtn.addEventListener('click', () => {
-					configManager.resetToDefault();
-					editingConfig = configManager.getConfig();
-					renderConfigModal();
-					addDebugLog('success', '配置已恢复为默认值');
-					render();
-					modal.hide();
-				});
-			}
-
-			// 模态框关闭后移除临时元素
-			modalElement.addEventListener('hidden.bs.modal', () => {
-				document.body.removeChild(tempDiv);
-			});
-
-			modal.show();
-		});
-	}
-
-	// 保存配置
-	const saveConfigBtn = $('saveConfigBtn');
-	if (saveConfigBtn) {
-		saveConfigBtn.addEventListener('click', () => {
-			configManager.setPowerCheckConfig(editingConfig.powerCheck);
-			addDebugLog('success', '配置已保存');
-
-			// 关闭模态框
-			const modalElement = document.getElementById('configModal');
-			if (modalElement) {
-				const modal = (window as any).bootstrap.Modal.getInstance(modalElement);
-				if (modal) {
-					modal.hide();
-				}
-			}
-
-			// 重新渲染以应用新配置
-			render();
-		});
-	}
 }
 
 // ==================== 元件选择 ====================
@@ -1437,21 +884,16 @@ async function selectComponent(primitiveId: string, pageUuid: string): Promise<v
 	addDebugLog('info', `选中元件: ${primitiveId}`);
 
 	try {
-		// 获取当前图页
 		const currentPage = await edaApi.dmt_Schematic.getCurrentSchematicPageInfo();
 		const currentPageUuid = currentPage?.uuid;
 
-		// 如果不是当前图页，先切换图页
 		if (currentPageUuid !== pageUuid) {
 			addDebugLog('info', `切换到图页: ${pageUuid}`);
 			await edaApi.dmt_EditorControl.openDocument(pageUuid);
-			await new Promise(r => setTimeout(r, 300)); // 等待图页切换完成
+			await new Promise(r => setTimeout(r, 300));
 		}
 
-		// 清除当前选中
 		await edaApi.sch_SelectControl.clearSelected();
-
-		// 使用图元ID选中元件
 		await edaApi.sch_SelectControl.doSelectPrimitives([primitiveId]);
 
 		addDebugLog('success', '元件已选中');
@@ -1464,23 +906,19 @@ async function selectComponent(primitiveId: string, pageUuid: string): Promise<v
 // ==================== 完成动画 ====================
 
 function triggerCompleteAnimation(primitiveId: string, pageUuid: string): void {
-	// 记录为已完成
 	completedPrimitiveIds.set(primitiveId, pageUuid);
 
-	// 找到对应的DOM元素并添加动画类
 	setTimeout(() => {
 		const taskItem = document.querySelector(`[data-primitive-id="${primitiveId}"]`) as HTMLElement;
 		if (taskItem) {
 			taskItem.classList.add('completed-animate');
 
-			// 动画结束后重新渲染（不从缓冲区移除，保留数据用于统计）
 			setTimeout(() => {
 				render();
 				addDebugLog('success', `元件已完成: ${primitiveId}`);
-			}, 800); // 动画持续时间
+			}, 800);
 		}
 		else {
-			// 如果没有DOM元素（比如元件不在当前图页），直接渲染
 			render();
 		}
 	}, 100);
@@ -1490,7 +928,6 @@ function triggerCompleteAnimation(primitiveId: string, pageUuid: string): void {
 
 async function init(): Promise<void> {
 	initEvents();
-	startConsoleLog(); // 启动每秒console输出
 	await refreshData();
 }
 

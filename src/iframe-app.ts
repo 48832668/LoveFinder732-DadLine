@@ -3,6 +3,177 @@
  * 任务清单 + 激励式界面
  */
 
+// ==================== 配置管理 ====================
+
+// 当前配置版本号
+const CONFIG_VERSION = '26.3.16';
+
+/**
+ * 供电检查策略配置
+ */
+interface PowerCheckConfig {
+	enabled: boolean;
+	designatorPrefixes: string[];
+	customRules: string[];
+}
+
+/**
+ * 插件配置接口
+ */
+interface PluginConfig {
+	version: string;
+	powerCheck: PowerCheckConfig;
+	lastUpdated: number;
+}
+
+/**
+ * 默认配置
+ */
+const DEFAULT_CONFIG: PluginConfig = {
+	version: CONFIG_VERSION,
+	powerCheck: {
+		enabled: true,
+		designatorPrefixes: ['U'],
+		customRules: [],
+	},
+	lastUpdated: Date.now(),
+};
+
+/**
+ * 配置管理器
+ */
+class ConfigManager {
+	private config: PluginConfig;
+	private listeners: Array<(config: PluginConfig) => void> = [];
+
+	constructor() {
+		this.config = this.loadFromStorage();
+	}
+
+	private loadFromStorage(): PluginConfig {
+		try {
+			const stored = localStorage.getItem('dadline-config');
+			if (stored) {
+				const parsed = JSON.parse(stored) as Partial<PluginConfig>;
+				return this.mergeConfig(parsed);
+			}
+		}
+		catch (e) {
+			console.warn('[ConfigManager] 加载配置失败:', e);
+		}
+		return { ...DEFAULT_CONFIG };
+	}
+
+	private mergeConfig(stored: Partial<PluginConfig>): PluginConfig {
+		return {
+			version: CONFIG_VERSION,
+			powerCheck: {
+				enabled: stored.powerCheck?.enabled ?? DEFAULT_CONFIG.powerCheck.enabled,
+				designatorPrefixes: stored.powerCheck?.designatorPrefixes ?? [...DEFAULT_CONFIG.powerCheck.designatorPrefixes],
+				customRules: stored.powerCheck?.customRules ?? [...DEFAULT_CONFIG.powerCheck.customRules],
+			},
+			lastUpdated: stored.lastUpdated ?? Date.now(),
+		};
+	}
+
+	private saveToStorage(): void {
+		try {
+			this.config.lastUpdated = Date.now();
+			localStorage.setItem('dadline-config', JSON.stringify(this.config));
+		}
+		catch (e) {
+			console.warn('[ConfigManager] 保存配置失败:', e);
+		}
+	}
+
+	public getConfig(): PluginConfig {
+		return { ...this.config };
+	}
+
+	public setPowerCheckConfig(powerCheck: PowerCheckConfig): void {
+		this.config.powerCheck = { ...powerCheck };
+		this.saveToStorage();
+		this.notifyListeners();
+	}
+
+	public shouldCheckPower(designator: string): boolean {
+		if (!this.config.powerCheck.enabled) {
+			return false;
+		}
+
+		for (const prefix of this.config.powerCheck.designatorPrefixes) {
+			if (designator.toUpperCase().startsWith(prefix.toUpperCase())) {
+				return true;
+			}
+		}
+
+		for (const rule of this.config.powerCheck.customRules) {
+			try {
+				const regex = new RegExp(rule, 'i');
+				if (regex.test(designator)) {
+					return true;
+				}
+			}
+			catch {
+				// 忽略无效的正则表达式
+			}
+		}
+
+		return false;
+	}
+
+	public exportConfig(): string {
+		const exportData = {
+			...this.config,
+			version: CONFIG_VERSION,
+			exportedAt: Date.now(),
+		};
+		return JSON.stringify(exportData, null, 2);
+	}
+
+	public importConfig(jsonString: string): boolean {
+		try {
+			const imported = JSON.parse(jsonString) as Partial<PluginConfig>;
+			if (!imported.powerCheck) {
+				throw new Error('配置格式错误：缺少 powerCheck 字段');
+			}
+			this.config = this.mergeConfig(imported);
+			this.saveToStorage();
+			this.notifyListeners();
+			return true;
+		}
+		catch (e) {
+			console.error('[ConfigManager] 导入配置失败:', e);
+			return false;
+		}
+	}
+
+	public resetToDefault(): void {
+		this.config = { ...DEFAULT_CONFIG };
+		this.saveToStorage();
+		this.notifyListeners();
+	}
+
+	public addListener(listener: (config: PluginConfig) => void): void {
+		this.listeners.push(listener);
+	}
+
+	private notifyListeners(): void {
+		const configCopy = this.getConfig();
+		this.listeners.forEach((listener) => {
+			try {
+				listener(configCopy);
+			}
+			catch (e) {
+				console.error('[ConfigManager] 监听器执行失败:', e);
+			}
+		});
+	}
+}
+
+// 全局配置管理器实例
+const configManager = new ConfigManager();
+
 // ==================== 数据结构 ====================
 
 interface PinInfo {
@@ -27,6 +198,9 @@ interface ComponentTask {
 	connectedPins: number;
 	progress: number;
 	completed: boolean;
+	needsPowerCheck?: boolean; // 是否需要供电检查
+	powerPinsConnected?: number; // 已连接的电源引脚数
+	powerPinsTotal?: number; // 电源引脚总数
 }
 
 interface PageData {
@@ -753,6 +927,11 @@ function renderTaskItem(comp: ComponentTask): string {
 	const statusClass = comp.completed ? 'task-completed' : (comp.progress > 0 ? 'task-progress' : 'task-pending');
 	const completedClass = comp.completed ? 'completed-animate' : '';
 
+	// 检查是否需要供电检查
+	const needsPowerCheck = configManager.shouldCheckPower(comp.designator);
+	const powerCheckIcon = needsPowerCheck ? '⚡' : '';
+	const powerCheckClass = needsPowerCheck ? 'needs-power-check' : '';
+
 	// 引脚排序：未连接的排在前面，方便用户查找
 	const sortedPins = [...comp.pins].sort((a, b) => {
 		// 已连接的排在后面
@@ -764,11 +943,11 @@ function renderTaskItem(comp: ComponentTask): string {
 	});
 
 	return `
-		<div class="task-item ${statusClass} ${completedClass}" data-primitive-id="${comp.primitiveId}" data-page-uuid="${comp.schematicPageUuid}">
+		<div class="task-item ${statusClass} ${completedClass} ${powerCheckClass}" data-primitive-id="${comp.primitiveId}" data-page-uuid="${comp.schematicPageUuid}">
 			<div class="task-header">
 				<div class="task-info">
 					<span class="task-icon">${statusIcon}</span>
-					<span class="task-designator">${comp.designator}</span>
+					<span class="task-designator">${comp.designator} ${powerCheckIcon}</span>
 					<span class="task-name">${comp.name || '-'}</span>
 				</div>
 				<div class="task-meta">
@@ -951,6 +1130,304 @@ function initEvents(): void {
 				icon.textContent = debugExpanded ? '▼' : '▶';
 			}
 		};
+	}
+
+	// 配置按钮
+	const configBtn = $('configBtn');
+	if (configBtn) {
+		configBtn.onclick = () => {
+			openConfigModal();
+		};
+	}
+
+	// 配置模态框事件
+	initConfigModalEvents();
+}
+
+// ==================== 配置管理界面 ====================
+
+// 当前编辑中的配置
+let editingConfig: PluginConfig = configManager.getConfig();
+
+/**
+ * 打开配置模态框
+ */
+function openConfigModal(): void {
+	editingConfig = configManager.getConfig();
+	renderConfigModal();
+
+	const modalElement = document.getElementById('configModal');
+	if (modalElement) {
+		const modal = new (window as any).bootstrap.Modal(modalElement);
+		modal.show();
+	}
+}
+
+/**
+ * 渲染配置模态框内容
+ */
+function renderConfigModal(): void {
+	// 更新供电检查启用状态
+	const powerCheckEnabled = $('powerCheckEnabled') as HTMLInputElement;
+	if (powerCheckEnabled) {
+		powerCheckEnabled.checked = editingConfig.powerCheck.enabled;
+	}
+
+	// 渲染前缀标签
+	renderPrefixTags();
+
+	// 渲染自定义规则
+	renderCustomRules();
+
+	// 更新版本号显示
+	const configVersion = $('configVersion');
+	if (configVersion) {
+		configVersion.textContent = editingConfig.version;
+	}
+}
+
+/**
+ * 渲染前缀标签
+ */
+function renderPrefixTags(): void {
+	const container = $('prefixTags');
+	if (!container)
+		return;
+
+	container.innerHTML = editingConfig.powerCheck.designatorPrefixes.map(prefix => `
+		<span class="prefix-tag">
+			${prefix}
+			<span class="remove-btn" data-prefix="${prefix}">&times;</span>
+		</span>
+	`).join('');
+
+	// 绑定删除事件
+	container.querySelectorAll('.remove-btn').forEach((btn) => {
+		btn.addEventListener('click', (e) => {
+			const prefix = (e.currentTarget as HTMLElement).dataset.prefix;
+			if (prefix) {
+				editingConfig.powerCheck.designatorPrefixes = editingConfig.powerCheck.designatorPrefixes.filter(p => p !== prefix);
+				renderPrefixTags();
+			}
+		});
+	});
+}
+
+/**
+ * 渲染自定义规则
+ */
+function renderCustomRules(): void {
+	const container = $('customRules');
+	if (!container)
+		return;
+
+	container.innerHTML = editingConfig.powerCheck.customRules.map(rule => `
+		<div class="custom-rule">
+			<span>${rule}</span>
+			<span class="remove-btn" data-rule="${rule}">&times;</span>
+		</div>
+	`).join('');
+
+	// 绑定删除事件
+	container.querySelectorAll('.remove-btn').forEach((btn) => {
+		btn.addEventListener('click', (e) => {
+			const rule = (e.currentTarget as HTMLElement).dataset.rule;
+			if (rule) {
+				editingConfig.powerCheck.customRules = editingConfig.powerCheck.customRules.filter(r => r !== rule);
+				renderCustomRules();
+			}
+		});
+	});
+}
+
+/**
+ * 初始化配置模态框事件
+ */
+function initConfigModalEvents(): void {
+	// 供电检查启用开关
+	const powerCheckEnabled = $('powerCheckEnabled');
+	if (powerCheckEnabled) {
+		powerCheckEnabled.addEventListener('change', (e) => {
+			editingConfig.powerCheck.enabled = (e.target as HTMLInputElement).checked;
+		});
+	}
+
+	// 添加前缀
+	const addPrefixBtn = $('addPrefixBtn');
+	const newPrefixInput = $('newPrefixInput') as HTMLInputElement;
+	if (addPrefixBtn && newPrefixInput) {
+		addPrefixBtn.addEventListener('click', () => {
+			const prefix = newPrefixInput.value.trim().toUpperCase();
+			if (prefix && !editingConfig.powerCheck.designatorPrefixes.includes(prefix)) {
+				editingConfig.powerCheck.designatorPrefixes.push(prefix);
+				newPrefixInput.value = '';
+				renderPrefixTags();
+			}
+		});
+
+		// 回车键添加
+		newPrefixInput.addEventListener('keypress', (e) => {
+			if (e.key === 'Enter') {
+				addPrefixBtn.click();
+			}
+		});
+	}
+
+	// 添加自定义规则
+	const addRuleBtn = $('addRuleBtn');
+	const newRuleInput = $('newRuleInput') as HTMLInputElement;
+	if (addRuleBtn && newRuleInput) {
+		addRuleBtn.addEventListener('click', () => {
+			const rule = newRuleInput.value.trim();
+			if (rule) {
+				try {
+					// 验证正则表达式
+					// eslint-disable-next-line no-new
+					new RegExp(rule);
+					if (!editingConfig.powerCheck.customRules.includes(rule)) {
+						editingConfig.powerCheck.customRules.push(rule);
+						newRuleInput.value = '';
+						renderCustomRules();
+					}
+				}
+				catch {
+					showToast('无效的正则表达式', 'error');
+				}
+			}
+		});
+
+		// 回车键添加
+		newRuleInput.addEventListener('keypress', (e) => {
+			if (e.key === 'Enter') {
+				addRuleBtn.click();
+			}
+		});
+	}
+
+	// 导出配置
+	const exportConfigBtn = $('exportConfigBtn');
+	if (exportConfigBtn) {
+		exportConfigBtn.addEventListener('click', () => {
+			const configJson = configManager.exportConfig();
+			const blob = new Blob([configJson], { type: 'application/json' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `dadline-config-v${CONFIG_VERSION}.json`;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+			addDebugLog('success', '配置已导出');
+		});
+	}
+
+	// 导入配置
+	const importConfigBtn = $('importConfigBtn');
+	const configFileInput = $('configFileInput') as HTMLInputElement;
+	if (importConfigBtn && configFileInput) {
+		importConfigBtn.addEventListener('click', () => {
+			configFileInput.click();
+		});
+
+		configFileInput.addEventListener('change', (ev) => {
+			const file = (ev.target as HTMLInputElement).files?.[0];
+			if (file) {
+				const reader = new FileReader();
+				reader.onload = (event) => {
+					const content = event.target?.result as string;
+					if (configManager.importConfig(content)) {
+						editingConfig = configManager.getConfig();
+						renderConfigModal();
+						addDebugLog('success', '配置已导入');
+						// 重新渲染任务列表以应用新配置
+						render();
+					}
+					else {
+						showToast('配置导入失败，请检查文件格式', 'error');
+					}
+				};
+				reader.readAsText(file);
+			}
+			// 清空 input 以便可以重复选择同一文件
+			configFileInput.value = '';
+		});
+	}
+
+	// 恢复默认配置
+	const resetConfigBtn = $('resetConfigBtn');
+	if (resetConfigBtn) {
+		resetConfigBtn.addEventListener('click', () => {
+			// 使用 Bootstrap Modal 替代 confirm
+			const confirmModalHtml = `
+				<div class="modal fade" id="confirmResetModal" tabindex="-1">
+					<div class="modal-dialog modal-sm">
+						<div class="modal-content">
+							<div class="modal-header">
+								<h6 class="modal-title">确认恢复默认</h6>
+							</div>
+							<div class="modal-body">
+								<p class="mb-0">确定要恢复默认配置吗？这将覆盖当前所有配置。</p>
+							</div>
+							<div class="modal-footer">
+								<button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+								<button type="button" class="btn btn-danger btn-sm" id="confirmResetBtn">确定</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			`;
+
+			// 创建临时模态框
+			const tempDiv = document.createElement('div');
+			tempDiv.innerHTML = confirmModalHtml;
+			document.body.appendChild(tempDiv);
+
+			const modalElement = tempDiv.querySelector('#confirmResetModal') as HTMLElement;
+
+			const modal = new (window as any).bootstrap.Modal(modalElement);
+
+			// 绑定确认按钮事件
+			const confirmBtn = modalElement.querySelector('#confirmResetBtn');
+			if (confirmBtn) {
+				confirmBtn.addEventListener('click', () => {
+					configManager.resetToDefault();
+					editingConfig = configManager.getConfig();
+					renderConfigModal();
+					addDebugLog('success', '配置已恢复为默认值');
+					render();
+					modal.hide();
+				});
+			}
+
+			// 模态框关闭后移除临时元素
+			modalElement.addEventListener('hidden.bs.modal', () => {
+				document.body.removeChild(tempDiv);
+			});
+
+			modal.show();
+		});
+	}
+
+	// 保存配置
+	const saveConfigBtn = $('saveConfigBtn');
+	if (saveConfigBtn) {
+		saveConfigBtn.addEventListener('click', () => {
+			configManager.setPowerCheckConfig(editingConfig.powerCheck);
+			addDebugLog('success', '配置已保存');
+
+			// 关闭模态框
+			const modalElement = document.getElementById('configModal');
+			if (modalElement) {
+				const modal = (window as any).bootstrap.Modal.getInstance(modalElement);
+				if (modal) {
+					modal.hide();
+				}
+			}
+
+			// 重新渲染以应用新配置
+			render();
+		});
 	}
 }
 

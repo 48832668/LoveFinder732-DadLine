@@ -35,6 +35,7 @@
 		<input type="text" class="search-input" id="searchInput" placeholder="搜索..." />
 		<button class="refresh-btn" id="refreshBtn" title="刷新全部">🔄</button>
 		<button class="refresh-btn auto-btn" id="autoRefreshBtn" title="自动刷新">▶️</button>
+		<button class="refresh-btn config-btn" id="configBtn" title="配置">⚙️</button>
 	</div>
 
 	<!-- 任务列表 -->
@@ -53,6 +54,90 @@
 		</div>
 		<div class="debug-content" id="debugContent" style="display: none;"></div>
 	</div>
+
+	<!-- 配置模态框 -->
+	<div class="modal fade" id="configModal" tabindex="-1" aria-hidden="true">
+		<div class="modal-dialog modal-lg">
+			<div class="modal-content">
+				<div class="modal-header">
+					<h5 class="modal-title">⚙️ 插件配置</h5>
+					<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+				</div>
+				<div class="modal-body">
+					<!-- 供电检查策略卡片 -->
+					<div class="config-card">
+						<div class="config-card-header">
+							<span class="config-card-icon">⚡</span>
+							<span class="config-card-title">供电检查策略</span>
+							<div class="form-check form-switch">
+								<input class="form-check-input" type="checkbox" id="powerCheckEnabled">
+								<label class="form-check-label" for="powerCheckEnabled">启用</label>
+							</div>
+						</div>
+						<div class="config-card-body">
+							<p class="config-description">配置需要检查供电状态的元件位号规则。供电检查会验证这些元件的电源引脚是否正确连接。</p>
+
+							<div class="config-section">
+								<label class="config-label">位号前缀（以这些字母开头的位号会被检查）</label>
+								<div class="prefix-tags" id="prefixTags">
+									<!-- 动态生成的标签 -->
+								</div>
+								<div class="input-group mt-2">
+									<input type="text" class="form-control form-control-sm" id="newPrefixInput" placeholder="添加前缀，如 U, IC" maxlength="10">
+									<button class="btn btn-sm btn-primary" id="addPrefixBtn" type="button">添加</button>
+								</div>
+							</div>
+
+							<div class="config-section">
+								<label class="config-label">自定义正则规则（高级）</label>
+								<div class="custom-rules" id="customRules">
+									<!-- 动态生成的规则 -->
+								</div>
+								<div class="input-group mt-2">
+									<input type="text" class="form-control form-control-sm" id="newRuleInput" placeholder="添加正则表达式，如 ^U\\d+$">
+									<button class="btn btn-sm btn-primary" id="addRuleBtn" type="button">添加</button>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- 配置导入导出 -->
+					<div class="config-card">
+						<div class="config-card-header">
+							<span class="config-card-icon">📁</span>
+							<span class="config-card-title">配置导入/导出</span>
+						</div>
+						<div class="config-card-body">
+							<p class="config-description">导出配置到文件或从文件导入配置。配置包含供电检查策略等所有设置。</p>
+
+							<div class="config-actions">
+								<button class="btn btn-outline-primary btn-sm" id="exportConfigBtn">
+									📤 导出配置
+								</button>
+								<button class="btn btn-outline-success btn-sm" id="importConfigBtn">
+									📥 导入配置
+								</button>
+								<button class="btn btn-outline-danger btn-sm" id="resetConfigBtn">
+									🔄 恢复默认
+								</button>
+							</div>
+
+							<div class="config-version-info mt-3">
+								<small class="text-muted">当前配置版本：<span id="configVersion">-</span></small>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+					<button type="button" class="btn btn-primary" id="saveConfigBtn">保存配置</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- 导入配置文件输入 -->
+	<input type="file" id="configFileInput" accept=".json" style="display: none;">
 
 	<script src="/iframe/js/bootstrap.bundle.min.js"></script>
 	<script src="/dist/iframe/app.js"></script>
